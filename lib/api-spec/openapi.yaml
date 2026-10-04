@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: ProcureGuard API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: audit
+    description: Local deterministic procurement demo audit operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,55 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /audit:
+    post:
+      operationId: runAudit
+      tags: [audit]
+      summary: Run the local ProcureGuard sample audit
+      description: Executes the three local FastMCP tools against the supplied sample tender and bid data. It does not verify real tender information or produce an official determination.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuditRequest"
+      responses:
+        "200":
+          description: Deterministic local audit tool results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditReport"
+        "400":
+          description: Invalid audit request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The RFQ is not present in the local sample specification catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: The local FastMCP tool pipeline could not complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The local Python runtime is unavailable or the audit service is busy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "504":
+          description: The local FastMCP tool pipeline exceeded its execution limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +84,231 @@ components:
           type: string
       required:
         - status
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    AuditRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        rfqId:
+          type: string
+          minLength: 1
+          maxLength: 120
+        bidItems:
+          type: array
+          minItems: 1
+          maxItems: 250
+          items:
+            $ref: "#/components/schemas/AuditBidItem"
+        bids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/AuditBid"
+      required: [rfqId, bidItems, bids]
+    AuditBidItem:
+      type: object
+      additionalProperties: false
+      properties:
+        itemName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        bidPrice:
+          type: number
+          exclusiveMinimum: 0
+        currency:
+          type: string
+          minLength: 1
+          maxLength: 8
+        unit:
+          type: ["string", "null"]
+          maxLength: 64
+      required: [itemName, bidPrice, currency, unit]
+    AuditBid:
+      type: object
+      additionalProperties: false
+      properties:
+        bidderName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        directorPins:
+          type: array
+          maxItems: 40
+          items:
+            type: string
+            maxLength: 120
+        taxRegistration:
+          type: ["string", "null"]
+          maxLength: 120
+        metadata:
+          $ref: "#/components/schemas/BidMetadata"
+      required: [bidderName, directorPins, taxRegistration, metadata]
+    BidMetadata:
+      type: object
+      additionalProperties: true
+    TenderRequirement:
+      type: object
+      properties:
+        itemName:
+          type: string
+        minimumSpecification:
+          type: string
+      required: [itemName, minimumSpecification]
+    TenderSpecsResult:
+      type: object
+      properties:
+        rfqId:
+          type: string
+        source:
+          type: string
+        sampleData:
+          type: boolean
+        displayedRequirementCount:
+          type: integer
+        sourceRequirementCount:
+          type: integer
+        requirements:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenderRequirement"
+        note:
+          type: string
+      required:
+        - rfqId
+        - source
+        - sampleData
+        - displayedRequirementCount
+        - sourceRequirementCount
+        - requirements
+        - note
+    PriceDriftFinding:
+      type: object
+      properties:
+        itemName:
+          type: string
+        bidPrice:
+          type: number
+        benchmarkPrice:
+          type: ["number", "null"]
+        currency:
+          type: string
+        driftPercent:
+          type: ["number", "null"]
+        baselineFound:
+          type: boolean
+        unit:
+          type: ["string", "null"]
+        benchmarkSource:
+          type: ["string", "null"]
+        note:
+          type: ["string", "null"]
+      required:
+        - itemName
+        - bidPrice
+        - benchmarkPrice
+        - currency
+        - driftPercent
+        - baselineFound
+        - unit
+        - benchmarkSource
+        - note
+    PriceDriftResult:
+      type: object
+      properties:
+        currency:
+          type: string
+        sampleData:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PriceDriftFinding"
+      required: [currency, sampleData, items]
+    CollusionIndicator:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - shared_director_pin
+            - shared_tax_registration
+            - identical_pricing_model
+        bidderNames:
+          type: array
+          items:
+            type: string
+        matchedField:
+          type: string
+        evidence:
+          type: string
+      required: [kind, bidderNames, matchedField, evidence]
+    CollusionRiskResult:
+      type: object
+      properties:
+        sampleData:
+          type: boolean
+        manualReviewRequired:
+          type: boolean
+        indicators:
+          type: array
+          items:
+            $ref: "#/components/schemas/CollusionIndicator"
+        summary:
+          type: string
+      required: [sampleData, manualReviewRequired, indicators, summary]
+    AuditToolCall:
+      type: object
+      properties:
+        toolName:
+          type: string
+          enum:
+            - parse_tender_specs
+            - audit_price_drift
+            - flag_collusion_risk
+        status:
+          type: string
+          enum: [success]
+        resultCount:
+          type: integer
+      required: [toolName, status, resultCount]
+    AuditReport:
+      type: object
+      properties:
+        rfqId:
+          type: string
+        executedAt:
+          type: string
+          format: date-time
+        demoMode:
+          type: boolean
+        toolCalls:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditToolCall"
+        tenderSpecs:
+          $ref: "#/components/schemas/TenderSpecsResult"
+        priceDrift:
+          $ref: "#/components/schemas/PriceDriftResult"
+        collusionRisk:
+          $ref: "#/components/schemas/CollusionRiskResult"
+        notices:
+          type: array
+          items:
+            type: string
+      required:
+        - rfqId
+        - executedAt
+        - demoMode
+        - toolCalls
+        - tenderSpecs
+        - priceDrift
+        - collusionRisk
+        - notices
 

@@ -1,16 +1,21 @@
 import { useState } from 'react';
+import { runAudit, type AuditReport, type AuditRequest } from '@workspace/api-client-react';
 import {
   Activity, AlertTriangle, ArrowUpRight, Check, CheckCheck, CheckCircle2,
   Cpu, FileText, LockKeyhole, Play, RotateCcw, ShieldAlert, Table2, Users,
 } from 'lucide-react';
 
-type Bidder = { name: string; price: string; status: string; flagReason: string; badgeColor: 'red' | 'gold' | 'green' };
+type Bidder = {
+  name: string; price: string; status: string; flagReason: string; badgeColor: 'red' | 'gold' | 'green';
+  directorPins?: string[]; taxRegistration?: string | null;
+  metadata?: Record<string, string | number | boolean | null>;
+};
 type Log = { time: string; tool: string; msg: string };
 type LineItem = { item: string; rfq: string; bidder: string; baseline: string; drift: string; pass: boolean };
 type RedFlag = { type: string; severity: 'red' | 'gold' | 'green'; desc: string };
 type Tender = {
   id: string; title: string; budget: string; bidsCount: string; riskScore: string;
-  riskLevel: string; maxDrift: string; specMatched: string; bidders: Bidder[];
+  riskLevel: string; maxDrift: string; sourceRequirementCount: number; bidders: Bidder[];
   mcpLogs: Log[]; lineItems: LineItem[]; redFlags: RedFlag[];
 };
 
@@ -18,17 +23,16 @@ const tenders: Record<string, Tender> = {
   tender1: {
     id: 'REF: CP-2026-WTR-042', title: 'Solar-Powered Borehole & Water Kiosk System (Kitui County)',
     budget: 'KES 14,500,000', bidsCount: '3 Envelopes', riskScore: '88/100', riskLevel: 'HIGH RISK',
-    maxDrift: '+312%', specMatched: '11 / 14',
+    maxDrift: '+312%', sourceRequirementCount: 14,
     bidders: [
-      { name: 'Apex Water Systems Ltd', price: 'KES 14,100,000', status: 'FLAGGED', flagReason: '312% Price Drift & Shared Director PIN with SunTech', badgeColor: 'red' },
-      { name: 'SunTech Innovations EA', price: 'KES 13,850,000', status: 'FLAGGED', flagReason: 'Collusion Pattern (Identical Tax Registration)', badgeColor: 'red' },
+      { name: 'Apex Water Systems Ltd', price: 'KES 14,100,000', status: 'SAMPLE FLAG', flagReason: 'Sample director identifier also appears in the SunTech record', badgeColor: 'gold', directorPins: ['SAMPLE-DIRECTOR-001'], taxRegistration: 'SAMPLE-TAX-APEX', metadata: {} },
+      { name: 'SunTech Innovations EA', price: 'KES 13,850,000', status: 'SAMPLE FLAG', flagReason: 'Sample director identifier also appears in the Apex record', badgeColor: 'gold', directorPins: ['SAMPLE-DIRECTOR-001'], taxRegistration: 'SAMPLE-TAX-SUNTECH', metadata: {} },
       { name: 'HydroFlow Hydrogeology Ltd', price: 'KES 12,900,000', status: 'VERIFIED', flagReason: 'Market Baseline Aligned • Standard Specs', badgeColor: 'green' },
     ],
     mcpLogs: [
-      { time: '00:00.12', tool: 'mcp.parse_spec_matrix()', msg: 'Extracted 14 technical requirements from Tender PDF Envelope A, B, C.' },
-      { time: '00:00.45', tool: 'mcp.query_procurement_act_2015()', msg: 'Cross-referencing Section 66 (Prohibition of Ringing/Collusion).' },
-      { time: '00:01.02', tool: 'mcp.fetch_market_price_baselines()', msg: 'Pulled Kitui Q3 Solar Submersible Pump index baselines.' },
-      { time: '00:01.88', tool: 'mcp.detect_collusion_telemetry()', msg: 'CRITICAL: Shared Director PIN [KRA-A0039281] between Apex & SunTech.' },
+      { time: 'SAMPLE', tool: 'parse_tender_specs(rfq_id)', msg: 'Read illustrative requirement lines from the local sample catalog.' },
+      { time: 'SAMPLE', tool: 'audit_price_drift(bid_items)', msg: 'Compare the shown rates with local illustrative benchmark values.' },
+      { time: 'SAMPLE', tool: 'flag_collusion_risk(bids)', msg: 'Check supplied sample identifiers and pricing metadata for exact matches.' },
     ],
     lineItems: [
       { item: 'Submersible Pump 7.5KW Heavy Duty', rfq: 'Stainless Steel AISI 316', bidder: 'KES 890,000', baseline: 'KES 216,000', drift: '+312%', pass: false },
@@ -37,22 +41,22 @@ const tenders: Record<string, Tender> = {
       { item: '10,000L Elevated Steel Storage Tank', rfq: 'Galvanized Steel ISO 9001', bidder: 'KES 920,000', baseline: 'KES 850,000', drift: '+8.2%', pass: true },
     ],
     redFlags: [
-      { type: 'CRITICAL CARTEL COLLUSION DETECTED', severity: 'red', desc: 'Apex Water Systems Ltd and SunTech Innovations EA share identical Tax Director Registration [PIN: KRA-A0039281]. This is a sample finding referencing Section 66 of the Public Procurement Act 2015; no statute has been verified.' },
-      { type: 'SEVERE UNJUSTIFIED PRICE DRIFT', severity: 'red', desc: "Line Item 'Submersible Pump 7.5KW' is quoted at KES 890,000 vs sample regional market baseline of KES 216,000 (+312% drift)." },
+      { type: 'POTENTIAL SHARED SAMPLE IDENTIFIER', severity: 'gold', desc: 'The illustrative Apex and SunTech records contain a repeated synthetic director identifier. This is an exact-match signal for manual review, not a collusion finding.' },
+      { type: 'PRICE DIFFERENCE VS SAMPLE BASELINE', severity: 'gold', desc: "The sample Submersible Pump bid is KES 890,000 vs a local illustrative baseline of KES 216,000 (+312.04%). No alert threshold is applied." },
     ],
   },
   tender2: {
     id: 'REF: HLTH-2026-KIT-019', title: 'Dispensary Medical Supplies & Consumables (Garissa East)',
     budget: 'KES 8,200,000', bidsCount: '2 Envelopes', riskScore: '42/100', riskLevel: 'MODERATE',
-    maxDrift: '+68%', specMatched: '18 / 20',
+    maxDrift: '+68%', sourceRequirementCount: 20,
     bidders: [
       { name: 'Farina Medical Supplies', price: 'KES 7,950,000', status: 'MODERATE', flagReason: 'Gauze Packets 68% above KEMSA baseline', badgeColor: 'gold' },
       { name: 'Athi Pharma Distributors', price: 'KES 6,800,000', status: 'VERIFIED', flagReason: 'Full PPB License • Price Match 96%', badgeColor: 'green' },
     ],
     mcpLogs: [
-      { time: '00:00.08', tool: 'mcp.parse_spec_matrix()', msg: 'Extracted 20 pharmaceutical line items from RFQ.' },
-      { time: '00:00.32', tool: 'mcp.query_procurement_act_2015()', msg: 'Verified Pharmacy & Poisons Board licensing database.' },
-      { time: '00:00.91', tool: 'mcp.fetch_market_price_baselines()', msg: 'Compared against KEMSA National Price Catalog 2026.' },
+      { time: 'SAMPLE', tool: 'parse_tender_specs(rfq_id)', msg: 'Read illustrative requirement lines from the local sample catalog.' },
+      { time: 'SAMPLE', tool: 'audit_price_drift(bid_items)', msg: 'Compare the shown rates with local illustrative benchmark values.' },
+      { time: 'SAMPLE', tool: 'flag_collusion_risk(bids)', msg: 'Check supplied sample identifiers and pricing metadata for exact matches.' },
     ],
     lineItems: [
       { item: 'Surgical Gloves Powder-Free Box', rfq: 'ISO 13485 Certified', bidder: 'KES 1,200', baseline: 'KES 950', drift: '+26.3%', pass: true },
@@ -64,14 +68,15 @@ const tenders: Record<string, Tender> = {
   tender3: {
     id: 'REF: PWRK-2026-RD-112', title: 'Feeder Road Graveling & Box Culverts (Machakos Ward 4)',
     budget: 'KES 22,000,000', bidsCount: '4 Envelopes', riskScore: '15/100', riskLevel: 'LOW RISK',
-    maxDrift: '+12.4%', specMatched: '25 / 25',
+    maxDrift: '+12.4%', sourceRequirementCount: 25,
     bidders: [
       { name: 'Machakos Civils & Earthworks', price: 'KES 21,200,000', status: 'VERIFIED', flagReason: 'NCA Category 4 Validated • Fully Compliant', badgeColor: 'green' },
       { name: 'Ukambani Heavy Roads Ltd', price: 'KES 21,800,000', status: 'VERIFIED', flagReason: 'Compliant Baseline Pricing', badgeColor: 'green' },
     ],
     mcpLogs: [
-      { time: '00:00.10', tool: 'mcp.parse_spec_matrix()', msg: 'Parsed 25 road construction engineering line items.' },
-      { time: '00:00.41', tool: 'mcp.fetch_market_price_baselines()', msg: 'Cross-checked gravel compaction rates against Ministry rates.' },
+      { time: 'SAMPLE', tool: 'parse_tender_specs(rfq_id)', msg: 'Read illustrative requirement lines from the local sample catalog.' },
+      { time: 'SAMPLE', tool: 'audit_price_drift(bid_items)', msg: 'Compare the shown rates with local illustrative benchmark values.' },
+      { time: 'SAMPLE', tool: 'flag_collusion_risk(bids)', msg: 'Check supplied sample identifiers and pricing metadata for exact matches.' },
     ],
     lineItems: [
       { item: 'Gravel Wearing Course Compaction (m3)', rfq: 'CBR > 30% Spec', bidder: 'KES 1,450', baseline: 'KES 1,380', drift: '+5.0%', pass: true },
@@ -87,10 +92,68 @@ const actions: Record<string, string> = {
   CANCEL_RE_TENDER: 'CANCEL TENDER & ORDER PUBLIC RE-ADVERTISEMENT',
 };
 
+function parseQuotedPrice(value: string): number {
+  const match = value.match(/\d[\d,]*(?:\.\d+)?/);
+  const amount = match ? Number(match[0].replaceAll(',', '')) : Number.NaN;
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('A sample bid item does not have a valid positive price.');
+  }
+  return amount;
+}
+
+function formatMoney(value: number, currency: string): string {
+  return `${currency} ${new Intl.NumberFormat('en-KE', { maximumFractionDigits: 2 }).format(value)}`;
+}
+
+function formatDrift(value: number | null): string {
+  if (value === null) return 'N/A';
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
+}
+
+function createAuditFlags(report: AuditReport): RedFlag[] {
+  const flags: RedFlag[] = report.collusionRisk.indicators.map((indicator) => {
+    const description = `${indicator.bidderNames.join(' and ')}: ${indicator.evidence} This exact-match signal requires manual review and is not a collusion finding.`;
+    const type = indicator.kind === 'shared_director_pin'
+      ? 'SHARED SAMPLE DIRECTOR IDENTIFIER'
+      : indicator.kind === 'shared_tax_registration'
+        ? 'SHARED SAMPLE TAX REGISTRATION'
+        : 'IDENTICAL SAMPLE PRICING METADATA';
+    return { type, severity: 'gold', desc: description };
+  });
+
+  for (const finding of report.priceDrift.items) {
+    if (!finding.baselineFound || finding.driftPercent === null || finding.benchmarkPrice === null) {
+      flags.push({
+        type: 'NO LOCAL SAMPLE BASELINE',
+        severity: 'gold',
+        desc: `${finding.itemName}: ${finding.note ?? 'No matching local sample benchmark was returned.'}`,
+      });
+      continue;
+    }
+
+    if (Math.abs(finding.driftPercent) < 0.005) continue;
+    flags.push({
+      type: finding.driftPercent > 0 ? 'ABOVE LOCAL SAMPLE BASELINE' : 'BELOW LOCAL SAMPLE BASELINE',
+      severity: finding.driftPercent > 0 ? 'gold' : 'green',
+      desc: `${finding.itemName}: ${formatMoney(finding.bidPrice, finding.currency)} vs ${formatMoney(finding.benchmarkPrice, finding.currency)} (${formatDrift(finding.driftPercent)}). This is arithmetic against illustrative data; no risk threshold is applied.`,
+    });
+  }
+
+  if (report.collusionRisk.indicators.length === 0) {
+    flags.unshift({
+      type: 'NO EXACT-MATCH INDICATORS',
+      severity: 'green',
+      desc: 'No exact matches were found in the supplied sample fields. This is not evidence of compliance; manual review is still required.',
+    });
+  }
+  return flags;
+}
+
 function App() {
   const [tenderKey, setTenderKey] = useState('tender1');
-  const [scanState, setScanState] = useState<'idle' | 'running' | 'complete'>('idle');
+  const [scanState, setScanState] = useState<'idle' | 'running' | 'complete' | 'error'>('idle');
   const [scanLog, setScanLog] = useState<string | null>(null);
+  const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
   const [officerId, setOfficerId] = useState('PO-99482-NAIROBI');
   const [action, setAction] = useState('REJECT_AND_ESCALATE');
   const [notes, setNotes] = useState('');
@@ -99,23 +162,81 @@ function App() {
   const tender = tenders[tenderKey];
   const isHigh = tender.riskLevel === 'HIGH RISK';
   const tone = isHigh ? 'red' : tender.riskLevel === 'MODERATE' ? 'gold' : 'green';
+  const visibleLineItems = auditReport
+    ? auditReport.priceDrift.items.map((finding) => {
+      const requirement = auditReport.tenderSpecs.requirements.find((item) => item.itemName === finding.itemName);
+      return {
+        item: finding.itemName,
+        rfq: requirement?.minimumSpecification ?? 'No matching requirement in the sample catalog.',
+        bidder: `${formatMoney(finding.bidPrice, finding.currency)}${finding.unit ? `/${finding.unit}` : ''}`,
+        baseline: finding.baselineFound && finding.benchmarkPrice !== null
+          ? `${formatMoney(finding.benchmarkPrice, finding.currency)}${finding.unit ? `/${finding.unit}` : ''}`
+          : 'Not available',
+        drift: formatDrift(finding.driftPercent),
+        baselineFound: finding.baselineFound,
+      };
+    })
+    : tender.lineItems.map((item) => ({
+      item: item.item,
+      rfq: item.rfq,
+      bidder: item.bidder,
+      baseline: item.baseline,
+      drift: item.drift,
+      baselineFound: true,
+    }));
+  const reportDrifts = auditReport?.priceDrift.items
+    .filter((item) => item.baselineFound && item.driftPercent !== null)
+    .map((item) => item.driftPercent as number) ?? [];
+  const maxReportedDrift = reportDrifts.length
+    ? reportDrifts.reduce((maximum, value) => Math.abs(value) > Math.abs(maximum) ? value : maximum)
+    : null;
+  const displayedMaxDrift = auditReport
+    ? maxReportedDrift === null ? 'N/A' : formatDrift(maxReportedDrift)
+    : tender.maxDrift;
+  const displayedRequirementCount = auditReport
+    ? `${auditReport.tenderSpecs.displayedRequirementCount} / ${auditReport.tenderSpecs.sourceRequirementCount}`
+    : `${tender.lineItems.length} / ${tender.sourceRequirementCount}`;
+  const displayedFlags = auditReport ? createAuditFlags(auditReport) : tender.redFlags;
 
   function changeTender(key: string) {
     setTenderKey(key);
     setScanState('idle');
     setScanLog(null);
+    setAuditReport(null);
     setPreview(false);
     setError('');
   }
 
-  function runSimulation() {
+  async function runSimulation() {
     if (scanState === 'running') return;
     setScanState('running');
-    setScanLog('LOCAL DEMO: simulated re-scan started. No MCP server or model was contacted.');
-    window.setTimeout(() => {
+    setAuditReport(null);
+    setScanLog('LOCAL MCP: running three deterministic tools against the sample records…');
+
+    try {
+      const request: AuditRequest = {
+        rfqId: tender.id,
+        bidItems: tender.lineItems.map((item) => ({
+          itemName: item.item,
+          bidPrice: parseQuotedPrice(item.bidder),
+          currency: 'KES',
+          unit: item.bidder.match(/\/([a-zA-Z0-9]+)$/)?.[1] ?? null,
+        })),
+        bids: tender.bidders.map((bidder) => ({
+          bidderName: bidder.name,
+          directorPins: bidder.directorPins ?? [],
+          taxRegistration: bidder.taxRegistration ?? null,
+          metadata: bidder.metadata ?? {},
+        })),
+      };
+      const report = await runAudit(request);
+      setAuditReport(report);
       setScanState('complete');
-      setScanLog('LOCAL DEMO: scan preview complete. Sample findings above are unchanged; nothing was sent or verified.');
-    }, 950);
+      setScanLog('LOCAL MCP: all three tools completed. The table and review panel now show their sample-data outputs.');
+    } catch {
+      setScanState('error');
+      setScanLog('The local MCP audit did not complete. Check that the API service is running, then try again.');
+    }
   }
 
   function reviewSignoff() {
@@ -145,12 +266,12 @@ function App() {
             </div>
           </div>
           <div className="header-context">
-            <span className="context-chip"><Cpu size={14} /><b>LOCAL BROWSER SIMULATION</b></span>
+            <span className="context-chip"><Cpu size={14} /><b>LOCAL FASTMCP TOOLS</b></span>
             <span className="context-chip context-demo"><span className="status-dot" /> SAMPLE DATA · NOT LIVE</span>
           </div>
           <button type="button" data-testid="button-run-scan" className="button-primary" onClick={runSimulation} disabled={scanState === 'running'}>
             {scanState === 'running' ? <Activity size={15} className="spin" /> : <Play size={15} />}
-            {scanState === 'running' ? 'Simulating scan…' : 'Run sample scan'}
+              {scanState === 'running' ? 'Running local audit…' : 'Run sample scan'}
           </button>
         </div>
       </header>
@@ -158,7 +279,7 @@ function App() {
       <main className="workspace">
         <div className="demo-banner" role="note">
           <span className="demo-icon"><AlertTriangle size={15} /></span>
-          <div><strong>DEMO ENVIRONMENT — ALL RECORDS AND FINDINGS ARE SAMPLE DATA.</strong><span> No live tender source, MCP/model connection, statute check, or market feed is active. Nothing here is an official procurement determination.</span></div>
+          <div><strong>DEMO ENVIRONMENT — ALL RECORDS AND FINDINGS ARE SAMPLE DATA.</strong><span> The local MCP tools use illustrative records and benchmark values only. No live tender source, external model, statute check, or market feed is active; nothing here is an official procurement determination.</span></div>
           <span className="demo-stamp mono">LOCAL ONLY</span>
         </div>
 
@@ -177,19 +298,19 @@ function App() {
           </div>
           <div className="metric-grid">
             <article className={`panel metric metric-${tone}`} data-testid="value-risk-score">
-              <span className="metric-title">FORENSIC RISK SCORE <span className="sample-dot">SAMPLE</span></span>
+              <span className="metric-title">SAMPLE RISK SCORE <span className="sample-dot">STATIC</span></span>
               <div className="metric-value-row"><b className="metric-value">{tender.riskScore}</b><span className={`badge badge-${tone}`}>{tender.riskLevel}</span></div>
-              <small>Illustrative indicator · not a live assessment</small>
+              <small>Illustrative only · not calculated by these MCP tools</small>
             </article>
             <article className="panel metric">
               <span className="metric-title">MAX PRICE DRIFT <span className="sample-dot">SAMPLE</span></span>
-              <div className="metric-value-row"><b className="metric-value gold">{tender.maxDrift}</b><ArrowUpRight size={17} className="gold" /></div>
-              <small>Compared with shown sample baseline</small>
+              <div className="metric-value-row"><b className="metric-value gold">{displayedMaxDrift}</b><ArrowUpRight size={17} className="gold" /></div>
+              <small>{auditReport ? 'Largest absolute variance with a local baseline' : 'Example value until the local scan runs'}</small>
             </article>
             <article className="panel metric">
-              <span className="metric-title">SPEC MATCHING <span className="sample-dot">SAMPLE</span></span>
-              <div className="metric-value-row"><b className="metric-value green">{tender.specMatched}</b><CheckCircle2 size={17} className="green" /></div>
-              <small>Shown matched / total requirements</small>
+              <span className="metric-title">SAMPLE REQUIREMENTS <span className="sample-dot">LOCAL</span></span>
+              <div className="metric-value-row"><b className="metric-value green">{displayedRequirementCount}</b><CheckCircle2 size={17} className="green" /></div>
+              <small>Displayed sample lines / catalog total · not a compliance match</small>
             </article>
             <article className="panel metric">
               <span className="metric-title">OFFICER HANDOFF</span>
@@ -218,54 +339,66 @@ function App() {
 
             <section className="panel terminal-panel">
               <div className="terminal-heading">
-                <div><span className="terminal-light" /><h2>CONTEXT TOOL EXECUTION STREAM</h2></div><span className="simulated-pill">SIMULATED</span>
+                <div><span className="terminal-light" /><h2>CONTEXT TOOL EXECUTION STREAM</h2></div><span className="simulated-pill">{auditReport ? 'LOCAL MCP · COMPLETE' : 'SAMPLE FLOW'}</span>
               </div>
-              <p className="terminal-subtitle">Sample log lines for interface demonstration only. No MCP tools are invoked.</p>
+              <p className="terminal-subtitle">Local deterministic tools compare only the supplied illustrative records and benchmarks.</p>
               <div className="terminal terminal-scan" role="log" aria-live="polite" data-testid="terminal-log">
-                {tender.mcpLogs.map((log, index) => (
+                {auditReport ? auditReport.toolCalls.map((tool, index) => {
+                  const message = tool.toolName === 'parse_tender_specs'
+                    ? `Returned ${tool.resultCount} displayed requirement lines from the local sample catalog.`
+                    : tool.toolName === 'audit_price_drift'
+                      ? `Computed price comparisons for ${tool.resultCount} supplied line items.`
+                      : `Returned ${tool.resultCount} exact-match indicator(s); manual review is required.`;
+                  return (
+                    <div className="log-entry" key={tool.toolName}>
+                      <div className="log-meta"><span>[LOCAL MCP] {tool.toolName}</span><span>TOOL #{String(index + 1).padStart(3, '0')}</span></div>
+                      <p>{message}</p>
+                    </div>
+                  );
+                }) : tender.mcpLogs.map((log, index) => (
                   <div className="log-entry" key={`${log.time}-${log.tool}`}>
                     <div className="log-meta"><span>[{log.time}] {log.tool}</span><span>DEMO #{String(index + 1).padStart(3, '0')}</span></div>
                     <p>{log.msg}</p>
                   </div>
                 ))}
-                {scanLog && <div className={`scan-result ${scanState === 'running' ? 'running' : ''}`}><Activity size={13} />{scanLog}</div>}
+                {scanLog && <div className={`scan-result ${scanState === 'running' ? 'running' : ''}`} role={scanState === 'error' ? 'alert' : 'status'}>{scanState === 'error' ? <AlertTriangle size={13} /> : scanState === 'complete' ? <CheckCircle2 size={13} /> : <Activity size={13} />}{scanLog}</div>}
               </div>
-              <div className="terminal-footer"><span>Sample entries <b>{tender.mcpLogs.length}</b></span><span>Execution <b>NOT CONNECTED</b></span><span>Scan <b>{scanState === 'complete' ? 'LOCAL PREVIEW COMPLETE' : scanState === 'running' ? 'SIMULATING' : 'IDLE'}</b></span></div>
+              <div className="terminal-footer"><span>Tools <b>{auditReport?.toolCalls.length ?? 3}</b></span><span>Execution <b>LOCAL FASTMCP</b></span><span>Scan <b>{scanState === 'complete' ? 'COMPLETE' : scanState === 'error' ? 'FAILED' : scanState === 'running' ? 'RUNNING' : 'READY'}</b></span></div>
             </section>
           </div>
 
           <div className="right-column">
             <section className="panel matrix">
               <div className="panel-heading matrix-heading">
-                <div><h2><Table2 size={16} /> LINE-ITEM SPEC & PRICE COMPARISON</h2><p>Example unit rates compared with the sample benchmark. Not independently verified.</p></div>
-                <div className="legend"><span className="red"><i /> High drift</span><span className="green"><i /> Spec pass</span></div>
+                <div><h2><Table2 size={16} /> LINE-ITEM SPEC & PRICE COMPARISON</h2><p>{auditReport ? 'Results returned by the local specification and price-drift tools.' : 'Example unit rates compared with the local sample benchmark. Not independently verified.'}</p></div>
+                <div className="legend"><span className="gold"><i /> Above baseline</span><span className="cyan"><i /> Below baseline</span></div>
               </div>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Line item / description</th><th>RFQ spec</th><th>Bidder rate</th><th>Sample baseline</th><th>Drift</th><th>Spec pass</th></tr></thead>
-                  <tbody>{tender.lineItems.map((item) => (
+                  <thead><tr><th>Line item / description</th><th>RFQ spec</th><th>Bidder rate</th><th>Sample baseline</th><th>Drift</th><th>Baseline</th></tr></thead>
+                  <tbody>{visibleLineItems.map((item) => (
                     <tr key={item.item} data-testid={`line-item-${item.item.replaceAll(' ', '-').toLowerCase()}`}>
                       <td className="item-name">{item.item}</td><td>{item.rfq}</td><td className="rate">{item.bidder}</td><td>{item.baseline}</td>
-                      <td className={parseFloat(item.drift.replace('+', '')) >= 50 ? 'red rate' : parseFloat(item.drift.replace('+', '')) > 25 ? 'gold rate' : 'green rate'}>{item.drift}</td>
-                      <td><span className={`badge badge-${item.pass ? 'green' : 'red'}`}>{item.pass ? 'PASS' : 'FAIL'}</span></td>
+                      <td className={`${item.drift === 'N/A' ? 'gold' : item.drift.startsWith('-') ? 'cyan' : 'gold'} rate`}>{item.drift}</td>
+                      <td><span className={`badge badge-${item.baselineFound ? 'green' : 'gold'}`}>{item.baselineFound ? 'AVAILABLE' : 'MISSING'}</span></td>
                     </tr>
                   ))}</tbody>
                 </table>
               </div>
-              <p className="table-note"><span className="mono">READ ONLY · DEMO DATA</span> Market benchmark values are supplied examples, not current market research.</p>
+              <p className="table-note"><span className="mono">READ ONLY · DEMO DATA</span>{auditReport ? auditReport.tenderSpecs.note : 'Local benchmark values are supplied examples, not current market research.'}</p>
             </section>
 
             <section className="panel flags">
-              <div className="panel-heading"><h2 className="red"><ShieldAlert size={16} /> FORENSIC ANOMALY & RED-FLAG REVIEW</h2><span className="minor-label">SAMPLE FINDINGS</span></div>
+              <div className="panel-heading"><h2 className="red"><ShieldAlert size={16} /> SAMPLE AUDIT RESULTS & ANOMALY REVIEW</h2><span className="minor-label">{auditReport ? 'LOCAL TOOL OUTPUT' : 'EXAMPLE FINDINGS'}</span></div>
               <div className="flag-list">
-                {tender.redFlags.map((flag) => (
+                {displayedFlags.map((flag) => (
                   <article className={`flag flag-${flag.severity}`} key={flag.type}>
-                    <div className="flag-heading"><h3><AlertTriangle size={14} />{flag.type}</h3><span>UNVERIFIED DEMO</span></div>
+                    <div className="flag-heading"><h3><AlertTriangle size={14} />{flag.type}</h3><span>{auditReport ? 'SAMPLE TOOL RESULT' : 'UNVERIFIED DEMO'}</span></div>
                     <p>{flag.desc}</p>
                   </article>
                 ))}
               </div>
-              <p className="disclaimer-inline">Risk labels and legal references are not validated by this demo.</p>
+              <p className="disclaimer-inline">Exact matches and price differences are descriptive sample outputs only; they are not proof of misconduct or verified market findings.</p>
             </section>
           </div>
         </section>
@@ -290,7 +423,7 @@ function App() {
               <aside className="preview-callout">
                 <div className="callout-label"><LockKeyhole size={15} /> LOCAL PREVIEW ONLY</div>
                 <div className="no-hash">No cryptographic digest<br />or receipt is generated.</div>
-                <p>Reviewing this form does not create, sign, submit, or persist an audit record. This interface has no backend connection.</p>
+                <p>Audit runs use local sample tools. Reviewing this form does not create, sign, submit, or persist a sign-off record.</p>
                 <button type="button" data-testid="button-preview-signoff" className="button-review" onClick={reviewSignoff}><CheckCheck size={16} /> REVIEW SIGN-OFF PREVIEW</button>
               </aside>
             </div>
@@ -307,7 +440,7 @@ function App() {
               <button type="button" className="button-secondary" data-testid="button-edit-preview" onClick={() => setPreview(false)}><RotateCcw size={14} /> Return to editable form</button>
             </div>
           )}
-          <div className="signoff-foot"><span><span className="gold">RULE 88-B · DEMO</span> AI does not award a tender autonomously.</span><span>All inputs remain in this browser session only.</span></div>
+          <div className="signoff-foot"><span><span className="gold">RULE 88-B · DEMO</span> AI does not award a tender autonomously.</span><span>Sample audit input goes to the local API; sign-off fields stay in this browser session.</span></div>
         </section>
 
         <footer className="footer"><span><b>PROCUREGUARD MCP</b> <span className="footer-sep">/</span> REVIEW DEMO</span><span>Sample data · no live procurement, legal, or model verification</span></footer>
