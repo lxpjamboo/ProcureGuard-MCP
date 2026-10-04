@@ -1,0 +1,1 @@
+- [ProcureGuard scope](procureguard-scope.md) — stay within the user's explicit requirements; ask before making material assumptions or adding features.

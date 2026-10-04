@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "ProcureGuard MCP"
+description = "A procurement audit dashboard for reviewing tender bids, risk indicators, specification matches, and human sign-off. The first release presents the supplied sample tenders in clearly labeled demo mode; live MCP checks and durable audit records are not connected yet."
+version = "1.0.0"
+id = "artifacts/procureguard"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18295
+
+[services.development]
+run = "pnpm --filter @workspace/procureguard run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/procureguard", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/procureguard/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18295"
+BASE_PATH = "/"
