@@ -136,11 +136,11 @@ In strict accordance with statutory governance rules:
 python3 -m venv venv
 source venv/bin/activate
 
-# Install MCP requirements
+## Install MCP requirements
 pip install mcp fastmcp sqlite3
 
-# Install Node dependencies
+## Install Node dependencies
 npm install
 
-# Initialize local SQLite market baselines
+## Initialize local SQLite market baselines
 python scripts/init_db.py
