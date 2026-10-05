@@ -131,7 +131,7 @@ In strict accordance with statutory governance rules:
    ```bash
    git clone [https://github.com/lxpjamboo/ProcureGuard-MCP.git](https://github.com/lxpjamboo/ProcureGuard-MCP.git)
    cd ProcureGuard-MCP
-# Set up Python virtual environment
+   # Set up Python virtual environment
 python3 -m venv venv
 source venv/bin/activate
 
