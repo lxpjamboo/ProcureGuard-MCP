@@ -66,6 +66,7 @@ ProcureGuard MCP addresses procurement leakage by pairing a local reasoning engi
                    | Local LLM / Qwen   |    | SQLite Market     |    | Corporate Registry   |
                    | Unstructured Parser|    | Price Baselines   |    | Index (KRA / BRS)    |
                    +--------------------+    +-------------------+    +----------------------+
+```
 
 ## 5. Agent Architecture
 ProcureGuard implements a **Goal-Directed Audit Loop**:
