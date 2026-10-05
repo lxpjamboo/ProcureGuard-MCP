@@ -131,8 +131,16 @@ In strict accordance with statutory governance rules:
    ```bash
    git clone [https://github.com/lxpjamboo/ProcureGuard-MCP.git](https://github.com/lxpjamboo/ProcureGuard-MCP.git)
    cd ProcureGuard-MCP
-   python3 -m venv venv
+
+   # Set up Python virtual environment
+python3 -m venv venv
 source venv/bin/activate
+
+# Install MCP requirements
 pip install mcp fastmcp sqlite3
+
+# Install Node dependencies
 npm install
+
+# Initialize local SQLite market baselines
 python scripts/init_db.py
