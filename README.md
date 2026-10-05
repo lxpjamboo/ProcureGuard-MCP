@@ -139,4 +139,5 @@ source venv/bin/activate
 pip install mcp fastmcp sqlite3
 # Install Node dependencies
 npm install
+# Initialize local SQLite market baselines
 python scripts/init_db.py
