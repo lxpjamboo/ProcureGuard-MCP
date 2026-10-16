@@ -1,0 +1,92 @@
+# scripts/init_db.py
+import sqlite3
+import os
+
+def init_procureguard_db():
+    db_path = 'procureguard.db'
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # 1. Market Price Baselines Table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS market_baselines (
+            item_code TEXT PRIMARY KEY,
+            description TEXT NOT NULL,
+            unit_baseline_kes REAL NOT NULL,
+            category TEXT NOT NULL
+        )
+    ''')
+
+    # 2. Corporate Registry Index Table (KRA / BRS Simulation)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS corporate_registry (
+            company_name TEXT PRIMARY KEY,
+            kra_pin TEXT NOT NULL,
+            director_identifier TEXT NOT NULL
+        )
+    ''')
+
+    # 3. Submitted Bid Envelopes Table (Missing previously)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bid_envelopes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_name TEXT NOT NULL,
+            total_bid_kes REAL NOT NULL,
+            status_flag TEXT NOT NULL
+        )
+    ''')
+
+    # 4. Forensic Price Drifts Table (Missing previously)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS forensic_drifts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_code TEXT NOT NULL,
+            bidder_rate_kes REAL NOT NULL,
+            base_rate_kes REAL NOT NULL,
+            drift_pct REAL NOT NULL
+        )
+    ''')
+
+    # Seed Baseline Sample Data
+    baselines = [
+        ('PUMP-7.5KW', 'Submersible Pump 7.5KW Heavy Duty', 216000.0, 'PUMPING_EQUIPMENT'),
+        ('SOLAR-550W', 'Solar PV Panels 550W Monocrystalline', 28000.0, 'SOLAR_HARDWARE'),
+        ('DRILL-200M', 'Hydro-geological Survey & Drilling 200m', 1300000.0, 'CIVIL_WORKS'),
+        ('TANK-10000L', '10,000L Elevated Steel Storage Tank', 950000.0, 'STORAGE_HARDWARE')
+    ]
+
+    registry = [
+        ('Apex Water Systems Ltd', 'A009845123Z', 'DIR-KEY-7781'),
+        ('SunTech Innovations EA', 'A009845123Z', 'DIR-KEY-7781'),
+        ('HydroFlow Hydrogeology Ltd', 'P051289301X', 'DIR-KEY-9902')
+    ]
+
+    envelopes = [
+        ('Apex Water Systems Ltd', 14100000.0, '⚠ FLAG: SHARED DIRECTOR PIN'),
+        ('SunTech Innovations EA', 13850000.0, '⚠ FLAG: COVER BIDDING MATCH'),
+        ('HydroFlow Hydrogeology Ltd', 12900000.0, '✓ VERIFIED BASELINE')
+    ]
+
+    drifts = [
+        ('Submersible Pump', 890000.0, 216000.0, 312.0),
+        ('Solar PV Panels', 42000.0, 28000.0, 50.0),
+        ('Hydro-geological', 1450000.0, 1300000.0, 11.0),
+        ('Steel Storage', 92000.0, 950000.0, -3.0)
+    ]
+
+    cursor.executemany('INSERT OR REPLACE INTO market_baselines VALUES (?,?,?,?)', baselines)
+    cursor.executemany('INSERT OR REPLACE INTO corporate_registry VALUES (?,?,?)', registry)
+    
+    # Clear and re-populate dynamic tables to prevent duplication on re-runs
+    cursor.execute('DELETE FROM bid_envelopes')
+    cursor.executemany('INSERT INTO bid_envelopes (company_name, total_bid_kes, status_flag) VALUES (?,?,?)', envelopes)
+
+    cursor.execute('DELETE FROM forensic_drifts')
+    cursor.executemany('INSERT INTO forensic_drifts (item_code, bidder_rate_kes, base_rate_kes, drift_pct) VALUES (?,?,?,?)', drifts)
+
+    conn.commit()
+    conn.close()
+    print("✓ SQLite baseline store successfully initialized with full operational schema: procureguard.db")
+
+if __name__ == "__main__":
+    init_procureguard_db()
