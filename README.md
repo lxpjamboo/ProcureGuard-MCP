@@ -31,27 +31,26 @@ Public procurement systems across emerging markets face systemic risks from stru
 * **Forensic Internal Auditors**: Reviewing historical price drift across municipal supply chains.
 * **Regulatory & Anti-Corruption Bodies**: Inspecting immutable audit logs and officer decision trails.
 
----
-
 ## 4. Architecture
+
+```text
 [ Public Ledger / Tender Data ]
-│
-▼
-[ Python Ingestion Sync ]
-│
-▼
-[ SQLite Ledger ] (procureguard.db)
-│
-├──────► [ FastMCP Server ] ◄───► [ Local Ollama Engine ]
-│             │                     (qwen2.5-instruct:3b)
-│             ▼
-└──────► [ PHP / Alpine.js Dashboard ]
-│
-▼
-[ PPADA Sec 114 Officer Gate ]
-
----
-
+              │
+              ▼
+    [ Python Ingestion Sync ]
+              │
+              ▼
+      [ SQLite Ledger ] (procureguard.db)
+              │
+              ├──────► [ FastMCP Server ] ◄───► [ Local Ollama Engine ]
+              │             │                     (qwen2.5-instruct:3b)
+              │             ▼
+              └──────► [ PHP / Alpine.js Dashboard ] 
+                            │
+                            ▼
+               [ PPADA Sec 114 Officer Gate ]
+```text               
+###
 ## 5. Setup & Installation Instructions
 
 ### Prerequisites
