@@ -17,7 +17,7 @@ def init_procureguard_db():
         )
     ''')
 
-    # 2. Corporate Registry Index Table (KRA / BRS Simulation)
+    # 2. Corporate Registry Index Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS corporate_registry (
             company_name TEXT PRIMARY KEY,
@@ -26,7 +26,7 @@ def init_procureguard_db():
         )
     ''')
 
-    # 3. Submitted Bid Envelopes Table (Missing previously)
+    # 3. Submitted Bid Envelopes Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS bid_envelopes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,7 +36,7 @@ def init_procureguard_db():
         )
     ''')
 
-    # 4. Forensic Price Drifts Table (Missing previously)
+    # 4. Forensic Price Drifts Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS forensic_drifts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,6 +44,17 @@ def init_procureguard_db():
             bidder_rate_kes REAL NOT NULL,
             base_rate_kes REAL NOT NULL,
             drift_pct REAL NOT NULL
+        )
+    ''')
+
+    # 5. Audit Logs Telemetry Table (Persistent SQLite Ledger)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            officer_node TEXT NOT NULL,
+            action_description TEXT NOT NULL,
+            status TEXT NOT NULL
         )
     ''')
 
@@ -77,16 +88,21 @@ def init_procureguard_db():
     cursor.executemany('INSERT OR REPLACE INTO market_baselines VALUES (?,?,?,?)', baselines)
     cursor.executemany('INSERT OR REPLACE INTO corporate_registry VALUES (?,?,?)', registry)
     
-    # Clear and re-populate dynamic tables to prevent duplication on re-runs
     cursor.execute('DELETE FROM bid_envelopes')
     cursor.executemany('INSERT INTO bid_envelopes (company_name, total_bid_kes, status_flag) VALUES (?,?,?)', envelopes)
 
     cursor.execute('DELETE FROM forensic_drifts')
     cursor.executemany('INSERT INTO forensic_drifts (item_code, bidder_rate_kes, base_rate_kes, drift_pct) VALUES (?,?,?,?)', drifts)
 
+    # Seed initial system handshake log
+    cursor.execute('''
+        INSERT OR IGNORE INTO audit_logs (id, timestamp, officer_node, action_description, status)
+        VALUES (1, datetime('now', 'localtime'), 'PO-98402-NAIROBI', 'MCP Telemetry Handshake Established', 'SUCCESS')
+    ''')
+
     conn.commit()
     conn.close()
-    print("✓ SQLite baseline store successfully initialized with full operational schema: procureguard.db")
+    print("✓ SQLite baseline store successfully initialized WITH audit_logs table: procureguard.db")
 
 if __name__ == "__main__":
     init_procureguard_db()
